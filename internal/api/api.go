@@ -233,41 +233,23 @@ func (h apiHandler) handleGetRooms(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h apiHandler) handleGetRoomMessages(w http.ResponseWriter, r *http.Request) {
-	_, rawRoomID, roomID, ok := h.readRoom(w, r)
+	_, _, roomID, ok := h.readRoom(w, r)
 	if !ok {
 		return
 	}
 
-	type _body struct {
-		Message string `json:"message"`
-	}
-	var body _body
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, "invalid json", http.StatusBadRequest)
-		return
-	}
-
-	messageID, err := h.q.InsertMessage(r.Context(), pgstore.InsertMessageParams{RoomID: roomID, Message: body.Message})
+	messages, err := h.q.GetRoomMessages(r.Context(), roomID)
 	if err != nil {
-		slog.Error("failed to insert message", "error", err)
 		http.Error(w, "something went wrong", http.StatusInternalServerError)
+		slog.Error("failed to get room messages", "error", err)
 		return
 	}
 
-	type response struct {
-		ID string `json:"id"`
+	if messages == nil {
+		messages = []pgstore.Message{}
 	}
 
-	sendJSON(w, response{ID: messageID.String()})
-
-	go h.notifyClients(Message{
-		Kind:   MessageKindMessageCreated,
-		RoomID: rawRoomID,
-		Value: MessageMessageCreated{
-			ID:      messageID.String(),
-			Message: body.Message,
-		},
-	})
+	sendJSON(w, messages)
 }
 
 func (h apiHandler) handleCreateRoomMessage(w http.ResponseWriter, r *http.Request) {
